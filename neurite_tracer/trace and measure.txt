@@ -1,0 +1,401 @@
+requires("1.49q"); 
+
+
+
+//Functions
+function filter(i, name) {
+    // is directory?
+    if (endsWith(name,"/")) return false;
+    
+    // is tiff?
+    if (!endsWith(name,".tif")) return false;
+    
+    return true;
+}
+
+function DetectNeuronal(i, name) {
+    // does name contain neuronalprefix
+    if (indexOf(name,neuronalprefix)==-1) return false;
+    return true;
+}
+
+function DetectBlue(i, name) {
+    // does name contain "Blue"
+    if (indexOf(name,"Blue")==-1) return false;
+    return true;
+}
+
+// Begin Main
+
+
+
+inputbackgroundpath="";
+inputdir="";
+inputthresholdg="";
+inputscale="";
+//inputparticlesize="";
+inputarguments=getArgument();
+if (lengthOf(inputarguments)!=0){
+	arguments=split(inputarguments,"@");
+	inputdir=arguments[0];
+	inputbackgroundpath=arguments[1];
+	inputthresholdg=arguments[2];
+	inputthresholdb=arguments[3];
+	inputscale=arguments[4];
+	inputsmallnuclei=arguments[5];
+	inputlargenuclei=arguments[6];
+	inputneuronalprefix=arguments[7];
+	inputnuclearprefix=arguments[8];
+
+}
+
+if (lengthOf(inputbackgroundpath)==0){
+	if (nImages==1) {
+		info= split(getImageInfo(),'\n');
+		for (i=0; i<lengthOf(info); i++) {
+			if (startsWith(info[i],"Path")) {
+				backgroundpath=substring(info[i],6,lengthOf(info[i]));
+				close();
+			}
+		}
+	
+	} else {
+		exit("Please open only your background image and restart the macro");
+	}
+}else{
+	backgroundpath=inputbackgroundpath;
+}
+
+// Open image stacks
+
+if (lengthOf(inputdir)==0) {
+	dir = getDirectory("Choose a Directory ");
+}else{
+	dir=inputdir;
+}
+
+print("Currently processing \""+dir+"\"");
+
+
+if (lengthOf(inputthresholdg)==0) {
+	Dialog.create("");
+	Dialog.addMessage("Please enter the parameters for this analysis.");
+	Dialog.addNumber("Value for lower threshold on neuronal images: ", 1);
+	Dialog.addNumber("Value for lower threshold on nuclear images: ", 1);
+	Dialog.addNumber("Image scale (pixels/micron; enter 1 for values in pixels)", 1);
+	Dialog.addNumber("Size of smallest nuclei (area)", 1);
+	Dialog.addNumber("Size of largest nuclei (area)", 1);
+	Dialog.addString("Prefix for neuronal images: ", "Neuronal");
+	Dialog.addString("Prefix for nuclear images: ", "Nuclear");
+	Dialog.show();
+	greenthreshold=Dialog.getNumber();
+	bluethreshold=Dialog.getNumber();
+	scale=Dialog.getNumber();
+	smallnuclei=Dialog.getNumber();
+	largenuclei=Dialog.getNumber();
+	neuronalprefix=Dialog.getString();
+	nuclearprefix=Dialog.getString();
+}else{
+	greenthreshold=inputthresholdg;
+	bluethreshold=inputthresholdb;
+	scale=inputscale;
+	smallnuclei=inputsmallnuclei;
+	largenuclei=inputlargenuclei;
+	neuronalprefix=inputneuronalprefix;
+	nuclearprefix=inputnuclearprefix;
+//	particlesize=inputparticlesize;
+}
+selectWindow("Log");
+
+print("Loading images...");
+selectWindow("Log");
+
+list = getFileList(dir);
+greenstack = 0;
+bluestack = 0;
+setBatchMode(true); 
+for (i=0; i<list.length; i++) {
+    showProgress(i, list.length);
+    if (filter(i, list[i])) {
+        if (DetectNeuronal(i,list[i])) {
+//            print("Green: "+list[i]);
+            indexABC=indexOf(list[i],neuronalprefix)+lengthOf(neuronalprefix);
+            ABC=substring(list[i],indexABC,indexABC+1);
+            slicelabel=list[i];
+//            slicelabel=replace(list[i],neuronalprefix+ABC,"")+ABC;
+            bluefile=replace(list[i],neuronalprefix,nuclearprefix);
+            if (File.exists(dir+bluefile)) {
+                open(dir+list[i]);
+                run("Copy");
+                if (greenstack==0) {
+                    greenslice1name = slicelabel;
+                    type = "" +bitDepth;
+                    if (type=="24") type = "RGB";
+                    w=getWidth(); 
+                    h=getHeight();
+                    close();
+                    newImage("Green",type,w,h,1);
+                    greenstack = getImageID();
+//                    print("greenstack "+greenstack);
+                } else {
+                    close();
+                    selectImage(greenstack);
+                    run("Add Slice");
+                } //if greenstack==0
+                setMetadata(slicelabel);
+                run("Paste");
+                open(dir+bluefile);
+                run("Copy");
+                if (bluestack==0) {
+                    blueslice1name = list[i];
+                    type = "" +bitDepth;
+                    if (type=="24") type = "RGB";
+                    w=getWidth(); 
+                    h=getHeight();
+                    close();
+                    newImage("Blue",type,w,h,1);
+//setBatchMode("exit and display");
+//setBatchMode(true);
+                    bluestack = getImageID();
+                    //print("bluestack "+bluestack);
+                } else {
+                    close();
+                    selectImage(bluestack);
+                    run("Add Slice");
+                } //if bluestack==0
+                setMetadata(slicelabel);
+                run("Paste");
+            } else {
+                //print(bluefile+" not found.");
+            } //if File.exists(dir+bluefile))
+        }
+    }
+}
+
+totalimages = nSlices - 1;
+//setBatchMode(true); 
+//Process green stack to create traces
+print("Pre-processing...");
+
+//Change ImageJ settings and image scale.
+run("Set Scale...", "distance=1 known=1 pixel=1 unit=1 global");
+run("Colors...", "foreground=black background=white selection=yellow");
+run("Options...", "iterations=1 black count=1");
+
+//Enhance contrast, subtract background, threshold and invert Blue stack.
+selectImage("Blue");
+setSlice(1);
+setMetadata(blueslice1name);
+setSlice(nSlices);
+run("Add Slice");
+saveAs("tiff",dir+"Nuclei.tif");
+rename("Blue");
+run("Enhance Contrast", "saturated=0.5 normalize_all use");
+run("Subtract Background...", "rolling=50 stack");
+saveAs("tiff",dir+"Processed Nuclei.tif");
+
+
+
+//There should be two windows open: "Green" "Processed Nuclei.tif".
+
+//Enhance contrast, subtract background, despeckle, blur, threshold Green stack.
+selectImage("Green");
+setSlice(nSlices);
+run("Add Slice");
+setSlice(1);
+setMetadata(greenslice1name);
+saveAs("tiff",dir+"Neurons.tif");
+rename("Green");
+open(backgroundpath);
+rename("background.tif");
+imageCalculator("Subtract create stack", "Green","background.tif");
+selectImage("Green");
+close();
+selectImage("background.tif");
+close();
+selectImage("Result of Green");
+run("Enhance Contrast", "saturated=3 normalize_all use");
+run("Despeckle", "stack");
+run("Subtract Background...", "rolling=50 stack");
+run("Gaussian Blur...", "radius=2 stack");
+saveAs("tiff",dir+"Processed Neurons.tif");
+
+//Find neuronal nuclei.
+print("Identifying neuronal nuclei...");
+selectImage("Processed Neurons.tif");
+setThreshold(greenthreshold, 255);
+run("Threshold", "thresholded remaining black stack");
+//run("Invert","stack");
+imageCalculator("Multiply create 32-bit stack", "Processed Nuclei.tif","Processed Neurons.tif");
+run("8-bit");
+setThreshold(bluethreshold, 255);
+run("Threshold", "thresholded remaining black stack");
+//run("Invert","stack");
+run("Watershed", "stack");
+//run("Invert","stack");
+run("Analyze Particles...", "size="+smallnuclei+"-"+largenuclei+" circularity=0.70-1.00 show=Masks stack");
+small=0;
+large=0;
+if(isOpen("Mask of Result of Processed Nuclei.tif")){
+selectImage("Mask of Result of Processed Nuclei.tif");
+rename("Small Neuronal Nuclei");
+small=1;
+}
+selectImage("Result of Processed Nuclei.tif");
+run("Analyze Particles...", "size=500-5000 circularity=0.10-1.00 show=Masks stack");
+if(isOpen("Mask of Result of Processed Nuclei.tif")){
+selectImage("Mask of Result of Processed Nuclei.tif");
+rename("Large Neuronal Nuclei");
+large=1;
+}
+if(large+small==0) {
+		showMessage("Error - No neuronal nuclei were detected.\nPlease check to make sure that your nuclei align properly with your neurons and that you have chosen an appropriate threshold for the nuclear images.");
+		exit();
+}
+if(large+small==2) {
+	imageCalculator("OR create stack", "Small Neuronal Nuclei","Large Neuronal Nuclei");
+	rename("Neuronal Nuclei");
+	run("Invert","stack");
+	run("Analyze Particles...", "size=0-5000 circularity=0.00-1.00 show=Masks clear summarize stack");
+	saveAs("tiff", dir+"Neuronal Nuclei.tif");
+	close();
+	selectImage("Small Neuronal Nuclei");
+	close();
+	selectImage("Large Neuronal Nuclei");
+	close();
+} else {
+	if(large==1) {
+	selectImage("Large Neuronal Nuclei");
+	rename("Neuronal Nuclei");
+	run("Analyze Particles...", "size=0-5000 circularity=0.00-1.00 show=Masks clear summarize stack");
+	saveAs("tiff", dir+"Neuronal Nuclei.tif");
+	close();
+	} else {
+		selectImage("Small Neuronal Nuclei");
+		rename("Neuronal Nuclei");
+		run("Analyze Particles...", "size=0-5000 circularity=0.00-1.00 show=Masks clear summarize stack");
+		saveAs("tiff", dir+"Neuronal Nuclei.tif");
+		close();
+	}
+}
+selectImage("Result of Processed Nuclei.tif");
+close();
+selectImage("Processed Nuclei.tif");
+close();
+selectImage("Processed Neurons.tif");
+close();
+//There should be 1 window open: "Summary of Neuronal Nuclei".
+
+//Threshold the stacks.
+print("Thresholding stack with Neuronal Threshold = "+greenthreshold+".");
+open(dir+"Processed Neurons.tif");
+setThreshold(greenthreshold, 255);
+run("Threshold", "thresholded remaining black stack");
+saveAs("tiff",dir+"Thresholded Neurons.tif");
+rename("Thresholded Green");
+//There should be 2 windows open: "Thresholded Green" "Summary of Neuronal Nuclei".
+
+//Remove specks on "Thresholded Green" image.
+selectImage("Thresholded Green");
+run("Colors...", "foreground=white background=black selection=yellow");
+run("Particle Remover", "size=0-500 circularity=0.5-1.00 show=Nothing stack");
+run("Colors...", "foreground=black background=white selection=yellow");
+saveAs("tiff",dir+"Despeckled Thresholded Tubulin.tif");
+rename("Thresholded Green");
+//run("Invert", "stack");
+
+//Skeletonize.
+print("Creating tracings...");
+selectImage("Thresholded Green");
+//run("Invert", "stack");
+run("Skeletonize", "stack");
+//run("Dilate", "stack");
+open(dir+"Neuronal Nuclei.tif");
+imageCalculator("Subtract create stack","Thresholded Green","Neuronal Nuclei.tif");
+setThreshold(255, 255);
+run("Threshold", "thresholded remaining black stack");
+run("Colors...", "foreground=white background=black selection=yellow");
+run("Particle Remover", "size=0-100 circularity=0.50-1.00 show=Nothing stack");
+run("Colors...", "foreground=black background=white selection=yellow");
+rename("Skeletonized Green");
+setThreshold(255, 255);
+run("Threshold", "thresholded remaining black stack");
+selectImage("Neuronal Nuclei.tif");
+close();
+selectImage("Thresholded Green");
+close();
+
+//Measure traces and count nuclei
+print("Measuring tracings and counting neurons...");
+run("Clear Results");
+
+selectImage("Skeletonized Green");
+saveAs("tiff", dir+"tracings.tif");
+setBatchMode(true);
+selectImage("tracings.tif");
+length=newArray(nSlices+1);
+for (i=1;i<nSlices+1;i++){
+	setSlice(i);
+	run("Select All");
+	run("Copy");
+	run("Internal Clipboard");
+	run("Lines8 ", "white show=Lines minimum=0 maximum=9999999 display redirect=None");
+	selectWindow("Results");
+	text = getInfo();
+	lines = split(text, "\n");
+	columns = split(lines[0], "\t");
+	
+	if (columns[0]==" ")
+		columns[0]= "Number";
+		param=newArray(nResults);
+		dmax=-1000000000;
+		dmin= 1000000000;
+		 tot=0;
+		ave=0;
+		nc=nResults;
+		hasmin1=false;
+		for (j=0; j<nResults; j++) {
+			data1=getResult(columns[7], j);
+			if (data1==-1)
+			nc--;
+		else{
+			if(data1==-1) hasmin1=true;
+			if (data1>dmax) dmax=data1;
+			if (data1<dmin) dmin=data1;
+			tot+=data1;
+		}
+	}
+	length[i]=tot/scale;
+selectImage("Clipboard");
+close();
+selectWindow("Results");
+run("Close");
+}
+
+for (i=1; i<nSlices; i++) {
+    setSlice(i);
+	label=getMetadata();
+	setResult("Label",i-1,label);
+	setResult("Length",i-1,length[i]);
+}
+updateResults();
+selectWindow("Summary of Neuronal Nuclei");
+nucleisummary = split(getInfo(),'\n');
+for (i=1; i<nSlices; i++) {
+	foo = split(nucleisummary[i]);
+	setResult("Nuclear Count",i-1,foo[1]);
+}
+updateResults();
+
+selectWindow("Results");
+saveAs("measurements", dir+"measurements.txt");
+print("Done!");
+setBatchMode("exit and display");
+selectWindow("Summary of Neuronal Nuclei");
+run("Close");
+selectWindow("Neuronal Nuclei");
+run("Close");
+selectImage("tracings.tif");
+run("Close");
+// END OF MAIN
+

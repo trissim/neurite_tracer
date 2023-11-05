@@ -1,0 +1,24 @@
+dir = getDirectory("Choose a Directory ");
+parentlist = getFileList(dir);
+ndirs=0;
+for (i=0; i<parentlist.length; i++) {
+  if (endsWith(parentlist[i], "/")) {
+	ndirs=ndirs+1;
+	}
+}
+
+dirlist=newArray(ndirs);
+k=0
+for (i=0; i<parentlist.length; i++) {
+ 	if (endsWith(parentlist[i], "/")) {
+		dirlist[k]=parentlist[i];
+//		dirlist[k]=substring(parentlist[i],0,lengthOf(parentlist[i])-1);
+		k=k+1;
+	}
+}
+
+for (j=0;j<ndirs;j++) {
+	run("Close All Without Saving");
+	runMacro("RGBmergetracings",dir+dirlist[j]);
+}
+

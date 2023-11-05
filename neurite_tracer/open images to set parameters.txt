@@ -1,0 +1,230 @@
+requires("1.49q"); 
+
+//Functions
+function filter(i, name) {
+    // is directory?
+    if (endsWith(name,"/")) return false;
+    
+    // is tiff?
+    if (!endsWith(name,".tif")) return false;
+    
+    return true;
+}
+
+function DetectNeuronal(i, name) {
+    // does name contain neuronalprefix
+    if (indexOf(name,neuronalprefix)==-1) return false;
+    return true;
+}
+
+function DetectBlue(i, name) {
+    // does name contain "Blue"
+    if (indexOf(name,"Blue")==-1) return false;
+    return true;
+}
+
+// Begin Main
+
+
+
+inputbackgroundpath="";
+inputdir="";
+inputthresholdg="";
+inputscale="";
+//inputparticlesize="";
+
+inputarguments=getArgument();
+if (lengthOf(inputarguments)!=0){
+	arguments=split(inputarguments,"@");
+	inputdir=arguments[0];
+	inputbackgroundpath=arguments[1];
+	inputthresholdg=arguments[2];
+	inputthresholdb=arguments[3];
+	inputscale=arguments[4];
+	inputneuronalprefix=arguments[5];
+	inputnuclearprefix=arguments[6];
+//	inputparticlesize=arguments[3];
+}
+
+if (lengthOf(inputbackgroundpath)==0){
+	if (nImages==1) {
+		info= split(getImageInfo(),'\n');
+		for (i=0; i<lengthOf(info); i++) {
+			if (startsWith(info[i],"Path")) {
+				backgroundpath=substring(info[i],6,lengthOf(info[i]));
+				close();
+			}
+		}
+	
+	} else {
+		exit("Please open only your background image and restart the macro");
+	}
+}else{
+	backgroundpath=inputbackgroundpath;
+}
+
+// Open image stacks
+
+if (lengthOf(inputdir)==0) {
+	dir = getDirectory("Choose a Directory ");
+}else{
+	dir=inputdir;
+}
+
+print("Currently processing \""+dir+"\"");
+
+
+if (lengthOf(inputthresholdg)==0) {
+	Dialog.create("");
+	Dialog.addMessage("Please enter the parameters for this analysis.");
+	Dialog.addString("Prefix for neuronal images: ", "Neuronal")
+	Dialog.addString("Prefix for nuclear images: ", "Nuclear")
+	Dialog.show();
+	neuronalprefix=Dialog.getString();
+	nuclearprefix=Dialog.getString();
+//	particlesize=Dialog.getNumber();
+}else{
+	greenthreshold=inputthresholdg;
+	bluethreshold=inputthresholdb;
+	scale=inputscale;
+	neuronalprefix=inputneuronalprefix;
+	neclearprefix=inputnuclearprefix;
+//	particlesize=inputparticlesize;
+}
+
+print("Loading images...");
+selectWindow("Log");
+
+list = getFileList(dir);
+greenstack = 0;
+bluestack = 0;
+setBatchMode(true); 
+for (i=0; i<list.length; i++) {
+    showProgress(i, list.length);
+    if (filter(i, list[i])) {
+        if (DetectNeuronal(i,list[i])) {
+//            print("Green: "+list[i]);
+            indexABC=indexOf(list[i],neuronalprefix)+lengthOf(neuronalprefix);
+//            ABC=substring(list[i],indexABC,indexABC+1);
+//            slicelabel=replace(list[i],neuronalprefix+ABC,"")+ABC;
+            bluefile=replace(list[i],neuronalprefix,nuclearprefix);
+            if (File.exists(dir+bluefile)) {
+                open(dir+list[i]);
+                run("Copy");
+                if (greenstack==0) {
+                    greenslice1name = list[i];
+                    type = "" +bitDepth;
+                    if (type=="24") type = "RGB";
+                    w=getWidth(); 
+                    h=getHeight();
+                    close();
+                    newImage("Green",type,w,h,1);
+                    greenstack = getImageID();
+//                    print("greenstack "+greenstack);
+                } else {
+                    close();
+                    selectImage(greenstack);
+                    run("Add Slice");
+                } //if greenstack==0
+                setMetadata(list[i]);
+                run("Paste");
+                open(dir+bluefile);
+                run("Copy");
+                if (bluestack==0) {
+                    blueslice1name = bluefile;
+                    type = "" +bitDepth;
+                    if (type=="24") type = "RGB";
+                    w=getWidth(); 
+                    h=getHeight();
+                    close();
+                    newImage("Blue",type,w,h,1);
+//setBatchMode("exit and display");
+//setBatchMode(true);
+                    bluestack = getImageID();
+                    //print("bluestack "+bluestack);
+                } else {
+                    close();
+                    selectImage(bluestack);
+                    run("Add Slice");
+                } //if bluestack==0
+                setMetadata(bluefile);
+                run("Paste");
+            } else {
+                //print(bluefile+" not found.");
+            } //if File.exists(dir+bluefile))
+        }
+    }
+}
+
+totalimages = nSlices - 1;
+
+//setBatchMode(true); 
+//Process green stack to create traces
+print("Pre-processing...");
+
+//Change ImageJ settings and image scale.
+run("Set Scale...", "distance=1 known=1 pixel=1 unit=1 global");
+run("Colors...", "foreground=black background=white selection=yellow");
+run("Options...", "iterations=1 black count=1");
+
+//Enhance contrast, subtract background, threshold and invert Blue stack.
+selectImage("Blue");
+setSlice(1);
+setMetadata(blueslice1name);
+setSlice(nSlices);
+run("Add Slice");
+saveAs("tiff",dir+"Nuclei.tif");
+rename("Blue");
+run("Enhance Contrast", "saturated=0.5 normalize_all use");
+run("Subtract Background...", "rolling=50 stack");
+saveAs("tiff",dir+"Processed Nuclei.tif");
+
+
+//There should be two windows open: "Green" "Processed Nuclei.tif".
+
+//Enhance contrast, subtract background, despeckle, blur, threshold Green stack.
+selectImage("Green");
+setSlice(nSlices);
+run("Add Slice");
+setSlice(1);
+setMetadata(greenslice1name);
+saveAs("tiff",dir+"Neurons.tif");
+rename("Green");
+open(backgroundpath);
+rename("background.tif");
+imageCalculator("Subtract create stack", "Green","background.tif");
+selectImage("Green");
+close();
+selectImage("background.tif");
+close();
+selectImage("Result of Green");
+run("Enhance Contrast", "saturated=3 normalize_all use");
+run("Despeckle", "stack");
+run("Subtract Background...", "rolling=50 stack");
+run("Gaussian Blur...", "radius=2 stack");
+saveAs("tiff",dir+"Processed Neurons.tif");
+setBatchMode("exit and display");
+waitForUser("Please determine your thresholds then click ok to continue");
+Dialog.create("");
+Dialog.addMessage("Please enter your thresholds.");
+Dialog.addNumber("Value for lower threshold on neuronal images: ",54);
+Dialog.addNumber("Value for lower threshold on nuclear images: ",68);
+Dialog.show();
+greenthreshold=Dialog.getNumber();
+bluethreshold=Dialog.getNumber();
+
+selectImage("Processed Neurons.tif");
+setThreshold(greenthreshold, 255);
+run("Threshold", "thresholded remaining black stack");
+//run("Invert","stack");
+imageCalculator("Multiply create 32-bit stack", "Processed Nuclei.tif","Processed Neurons.tif");
+run("8-bit");
+setThreshold(bluethreshold, 255);
+run("Threshold", "thresholded remaining black stack");
+//run("Invert","stack");
+run("Watershed", "stack");
+selectImage("Processed Nuclei.tif");
+close();
+selectImage("Result of Processed Nuclei.tif");
+rename("Processed Nuclei.tif");
+exit("Now use the magic wand and the measure command to determine the approximate size of the small and large nuclei.");

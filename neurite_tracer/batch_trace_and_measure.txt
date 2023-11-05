@@ -1,0 +1,73 @@
+backgroundpath=""
+if (nImages==1) {
+			info= split(getImageInfo(),'\n');
+			for (i=0; i<lengthOf(info); i++) {
+				if (startsWith(info[i],"Path")) {
+					backgroundpath=substring(info[i],6,lengthOf(info[i]));
+					print("Using \""+backgroundpath+"\" as background image.");
+				}
+			}
+	
+	} else {
+		exit("Please open only your background image and restart the macro");
+		}
+
+
+
+
+dir = getDirectory("Choose a Directory ");
+parentlist = getFileList(dir);
+ndirs=0;
+for (i=0; i<parentlist.length; i++) {
+  if (endsWith(parentlist[i], "/")) {
+	ndirs=ndirs+1;
+	}
+}
+//print("Number of subdirectories: "+ndirs);
+
+dirlist=newArray(ndirs);
+k=0;
+for (i=0; i<parentlist.length; i++) {
+ 	if (endsWith(parentlist[i], "/")) {
+		dirlist[k]=parentlist[i];
+//		dirlist[k]=substring(parentlist[i],0,lengthOf(parentlist[i])-1);
+		k=k+1;
+	}
+}
+
+Dialog.create("Batch");
+Dialog.addMessage("Please enter the parameters for this analysis.");
+Dialog.addNumber("Value for lower threshold on neuronal images: ", 10);
+Dialog.addNumber("Value for lower threshold on nuclear images: ", 50);
+Dialog.addNumber("Image scale (pixels/micron; enter 1 for values in pixels)", 1);
+Dialog.addNumber("Size of smallest nuclei (area)", 1);
+Dialog.addNumber("Size of largest nuclei (area)", 1);
+Dialog.addString("Prefix for neuronal images: ", "Neuronal")
+Dialog.addString("Prefix for nuclear images: ", "Nuclear")
+Dialog.show();
+greenthreshold=Dialog.getNumber();
+bluethreshold=Dialog.getNumber();
+scale=Dialog.getNumber();
+smallnuclei=Dialog.getNumber();
+largenuclei=Dialog.getNumber();
+neuronalprefix=Dialog.getString();
+nuclearprefix=Dialog.getString();
+for (j=0;j<ndirs;j++) {
+	//Close all images.
+	while (nImages>0) {
+		selectImage(nImages);
+		close();
+	}
+	//Close text windows except log.
+	while (isOpen("Results")) {
+         selectWindow("Results");
+         run("Close");
+    }
+    while (isOpen("Summary of Result of Blue")) {
+    	selectWindow("Summary of Result of Blue");
+    	run("Close");
+    }    	
+	runMacro("trace and measure",dir+dirlist[j]+"@"+backgroundpath+"@"+greenthreshold+"@"+bluethreshold+"@"+scale+"@"+smallnuclei+"@"+largenuclei+"@"+neuronalprefix+"@"+nuclearprefix);
+}
+
+

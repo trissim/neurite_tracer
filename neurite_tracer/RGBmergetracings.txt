@@ -1,0 +1,81 @@
+requires("1.49q"); 
+inputdir=getArgument();
+setBatchMode(true);
+// Open image stacks
+print("Loading images into memory...");
+selectWindow("Log");
+if (lengthOf(inputdir)==0) {
+	dir = getDirectory("Choose a Directory ");
+}else{
+	dir=inputdir;
+	print(dir);
+}
+list = getFileList(dir);
+greenstack = 0;
+bluestack = 0;
+open(dir+"Neurons.tif");
+rename("Green");
+open(dir+"Nuclei.tif");
+rename("Blue");
+open(dir+"Tracings.tif");
+rename("Red");
+
+run("RGB Merge...", "red=Red green=Green blue=Blue keep");
+rgbstack = getImageID();
+for (i=1; i<=nSlices; i++) {
+	selectImage("Green");
+	setSlice(i);
+	slicename=getMetadata();
+	selectImage(rgbstack);
+	setSlice(i);
+	setMetadata(slicename);
+}
+setSlice(nSlices);
+run("Delete Slice");
+saveAs("tiff", dir+"RGBmerged_tracings.tif");
+
+selectImage("Red");
+close();
+open(dir+"Neuronal Nuclei.tif");
+rename("Red");
+run("Outline", "stack");
+run("Dilate", "stack");
+run("RGB Merge...", "red=Red green=Green blue=Blue keep");
+rgbstack = getImageID();
+for (i=1; i<=nSlices; i++) {
+	selectImage("Green");
+	setSlice(i);
+	slicename=getMetadata();
+	selectImage(rgbstack);
+	setSlice(i);
+	setMetadata(slicename);
+}
+selectImage(rgbstack);
+setSlice(nSlices);
+run("Delete Slice");
+saveAs("tiff", dir+"RGBmerged_nuclei.tif");
+setBatchMode("exit and display");
+
+// END OF MAIN
+
+function filter(i, name) {
+    // is directory?
+    if (endsWith(name,"/")) return false;
+    
+    // is tiff?
+    if (!endsWith(name,".tif")) return false;
+    
+    return true;
+}
+
+function DetectGreen(i, name) {
+    // does name contain "Green"
+    if (indexOf(name,"Green")==-1) return false;
+    return true;
+}
+
+function DetectBlue(i, name) {
+    // does name contain "Blue"
+    if (indexOf(name,"Blue")==-1) return false;
+    return true;
+}
